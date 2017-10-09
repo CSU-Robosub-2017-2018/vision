@@ -304,7 +304,7 @@ class VisionTools:
     # @brief Draws boxes around found buoys and returns image
     # @param image - The input image with buoys to be drawn over
     # @return image - The final image with boxes drawn over initial image
-    def BuoyBoxes(self, image, boxes):
+    def BuoyBoxes(self, image, boxes=0):
 
         # Get average background color
         avg_color_rows = np.average(image, axis=0)
@@ -364,7 +364,8 @@ class VisionTools:
             image = cv2.rectangle(image, (x, y), (x + w, y + h), (redVal, grnVal, bluVal), 2)
             midx = x + 0.5*w
             midy = y + 0.5*h
-            buoyString = 'buoy #' + str(boxes.check((midx, midy), (redVal, grnVal, bluVal)))
+            buoyString = 'buoy #'
+            #buoyString = 'buoy #' + str(boxes.check((midx, midy), (redVal, grnVal, bluVal)))
             image = cv2.putText(image, buoyString, (x, y+h),
                                 cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 0), 0, cv2.LINE_AA)
             i += 1

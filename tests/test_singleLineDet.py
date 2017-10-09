@@ -4,11 +4,11 @@ test_simple.py - Tests registration of a single video against a background
                  image, detection and classification of things, and
                  identification of the classified things on screen.
                  '''
-from context import vision
-import cv2
-
-from vision.cameras.camera_img_feed import imgFeedCamera
+#import all necessary packages and utilities                 
+import cv2                
+import context
 from vision.vision_tools import VisionTools
+from vision.cameras.camera_img_feed import imgFeedCamera
 
 
 if __name__ == '__main__':
@@ -17,13 +17,14 @@ if __name__ == '__main__':
     print("     detection filtering algorithm on it then displays.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    test_cam = imgFeedCamera(
-        debug="/home/cskunk/Documents/Vision/tests/test_files/line1.jpg")
+    joeCamera = imgFeedCamera(
+        debug="/home/oren/vision/tests/test_files/line1.jpg")
+    image = joeCamera.getFrame()
     tools = VisionTools()
 
     # Setup a loop to capture a frame from the video feed
     while True:
-        final = test_cam.getFrame()
+        final = joeCamera.getFrame()
         final = tools.lineDet(final)
         cv2.imshow("Filtered line", final)
         if cv2.waitKey(100) & 0xFF == ord('q'):

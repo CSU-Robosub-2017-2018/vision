@@ -19,7 +19,10 @@ class videoFeedCamera(Camera):
     def getFrame(self):
         success, frame = self.cap.read()
         if (success):
-            # print "bbox: ", self.boundingBox
-            # print "shape: ", frame.shape
+            cv2.imshow('ting',frame)
+            print("shape: ", frame.shape)
+            cv2.waitKey(0)
 
             return frame
+        else:
+            print('failure')
