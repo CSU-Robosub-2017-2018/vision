@@ -23,7 +23,6 @@ if __name__ == '__main__':
     
     joeCamera = imgFeedCamera(debug="/home/oren/vision/tests/test_files/Circle.png")
     image = joeCamera.getFrame()
-
         
     # Resize Image
     r = 640.0 / image.shape[1]

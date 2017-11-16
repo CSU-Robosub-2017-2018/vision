@@ -12,13 +12,99 @@ class VisionTools:
     ##
     # @brief Does nothing important for the time being.  Will add some
     #        functionality later
+
+
     def __init__(self):
         # Dummy variable, not used for anything
         self.useme = True
+
+    ##
+    # @brief finds an object based on a desired color
+    # @param frame The frame in which the object needs to be found
+    # @param color The color of the desired object
+    # @return output returns a color mask (color is white, everything else is black)
+
+    def findObjWColor(self, frame, userColor):
+        #define colors and ranges specific color falls under
+        red_lower_range = np.array([13, 13, 168], dtype=np.uint8)
+        red_upper_range = np.array([101, 101, 242], dtype=np.uint8)
+
+        blue_lower_range = np.array([127, 17, 17], dtype=np.uint8)
+        blue_upper_range = np.array([224, 116, 116], dtype=np.uint8)
+
+        green_lower_range = np.array([13, 155, 13], dtype=np.uint8)
+        green_upper_range = np.array([111, 232, 111], dtype=np.uint8)
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        if userColor == "red":
+            mask = cv2.inRange(frame, red_lower_range, red_upper_range)
+        elif userColor == "blue":
+            mask = cv2.inRange(frame, blue_lower_range, blue_upper_range)
+        elif userColor == "green":
+            mask = cv2.inRange(frame, green_lower_range, green_upper_range)
+        
+        return(mask)
+
+
+    ##
+    # @brief finds average r, g, b value of an image
+    # @param frame The frame in which average color is to be found
+    # @return output returns average values and image of that color
+
+    def avgColor(self, frame):
+        #take average color value of each row of pixels
+        average_color_per_row = np.average(frame, axis=0)
+
+        #take the average of that average
+        average_color = np.average(average_color_per_row, axis=0)
+
+        #convert the array into uint8 format (for values from 0 to 255)
+        average_color = np.uint8(average_color)
+
+        #make a x by y pixel image of the average color
+        avg_color_image = np.array([[average_color]*500]*500, np.uint8)
+
+        #write the image file for the average color image
+        #cv2.imwrite("avg_color.png", avg_color_image)
+
+        return(avg_color_image)
+
+    ##
+    # @brief scans a region of interest (roi) accross an image
+    # @param frame The frame the roi is going to scan
+    # @param roi_size The side length of a square region of interest
+    # @return returns the region of interest
+
+    def roiScan(self, frame, roi_size):
+
+        #convert image to numpy array
+        image_data = np.asarray(frame)
+
+        #create a region of interest (roi) with dimentions designated by the user
+        roi_height = roi_size
+        roi_width = roi_size
+        roi = [[]*roi_width]*roi_height
+        roi = np.asarray(roi)
+
+        #fill roi with data, repeat across original image 
+        for i in range(0, image_data.shape[1] - roi_height, (int)(roi_height / 2)):
+            for j in range(0, image_data.shape[1] - roi_width, (int)(roi_width / 2)):
+                    print(i)
+                    print(j)
+                    roi = image_data[i : i + roi_height, j : j + roi_width]
+                    cv2.imshow('image', roi)
+                    if cv2.waitKey(100) & 0xFF == ord('q'):
+                        break
+            else:
+                continue
+            break    
+    
     ##
     # @brief Detects largest contour and draws a box around it
     # @param frame The frame in which a contour will be found
     # @return output Returns a new image with just the largest contour
+
     def lineIdent(self, frame):
         frame = cv2.medianBlur(frame, 5)
 
