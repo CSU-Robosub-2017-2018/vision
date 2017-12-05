@@ -10,11 +10,7 @@ class imgFeedCamera(Camera):
     # @param fileLocation The absolute file path to the image
     def __init__(self, connType=99, name="Image Feed", debug=None):
         # use the IPaddress as the video file location
-        print("before")
-        print(debug)
         Camera.__init__(self, connType, name, debug)
-        print("after")
-        print(debug)
 
         self.frame = cv2.imread(debug)
         print("Initialized camera.", self.__str__())
@@ -22,5 +18,5 @@ class imgFeedCamera(Camera):
     ##
     # @return Processed frame that was captured from the camera
     def getFrame(self):
-        print (self.frame)
+        #print (self.frame)
         return self.frame

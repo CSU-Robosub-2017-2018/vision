@@ -19,7 +19,174 @@ class VisionTools:
         self.useme = True
 
     ##
-    # @brief finds an object based on a desired color
+    # @brief finds object location based on shape: Developed by Jake Harmon
+    # @param frame_env Image passed in from camera
+    # @param userMask The shape the user/controls wishes to find
+    # @param div number of slices in the size of the mask
+    # @param size_range maximum scaling of the mask based on the original size
+    # @return lock[x] -vector- X values of the location
+    # @return lock[y] -vector- Y values of the location
+    # @return finalObject Image of the object
+    # @return max_val -vector- maximum correlation values for each mask
+
+    def calcObject(self, frame_env, userMask, div, size_range):
+        match_type = cv2.TM_CCORR_NORMED
+        if userMask == "circle":
+            obj = cv2.imread('/home/oren/vision/tests/test_files/circ_obj.PNG', cv2.IMREAD_GRAYSCALE)
+        #if userMask == "square":
+            #obj = cv2.imread('/home/oren/vision/tests/test_files/sq_obj.PNG'), cv2.IMREAD_GRAYSCALE)
+        #if userMask == "triangle":
+            #obj = cv2.imread('/home/oren/vision/tests/test_files/tri_obj.PNG'), cv2.IMREAD_GRAYSCALE)
+        #imk stores the sliced stages of the mask
+        imk = []
+
+        for J in range(1, div):
+            imk.append(cv2.resize(obj, (0,0), fx=J*div/size_range, fy=J*div/size_range))
+            #size of mask from 10% of input size to 200% of input size
+            #this range has been decided arbitrarily
+        
+        length = len(imk)
+        env = [0]*length
+        maxCorr = [0]*length
+        maxTuple = [0]*length
+        y = [0]*length
+        x = [0]*length
+        b= [0]*length
+        c=[0]*length
+        y1 = [0]*length
+        y2 = [0]*length
+        x1 = [0]*length
+        x2 = [0]*length
+        mn=[0]*length
+        new_frame_env = [0]*length
+        corrnew = [0]*length
+        envir = [0]*length
+        maxCorr_new = [0]*length
+        maxTuple_new = [0]*length
+        max_loc = [0]*length
+        max_loc_new=[0]*length
+        max_val = [0]*length
+        max_val_new = [0]*length
+        max_val_new = [0]*length
+        intem_y2 = [0]*length
+        intem_x1 = [0]*length
+        final_obj = [0]*length
+        intem_loc = [0]*length
+        threshold = .95
+        locx = [0]*length
+        locy = [0]*length
+        k = np.ones(len(imk)+1, dtype = np.int)
+        lb = frame_env.shape
+            
+        for index, item in enumerate(imk):
+           b[index] = imk[index]
+           w, h = b[index].shape[::-1]
+           h1 = math.ceil(h/2)
+           w1 = math.ceil(w/2)
+           
+           envir[index] = cv2.copyMakeBorder(frame_env,h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
+           c[index] = cv2.matchTemplate(envir[index], b[index], match_type)
+           #cv2.normalize(c[index],c[index],0,1,cv2.NORM_MINMAX,-1)
+           #IMportant: max_loc is in the form of (x,y) tuple, i.e. col then row
+           min_val, max_val[index], min_loc, max_loc[index] = cv2.minMaxLoc(c[index])
+           #maxCorr.insert(index, np.amax(c[index]))
+           #maxIndex is a tuple 
+           #maxTuple.insert(index, np.unravel_index(c[index].argmax(), c[index].shape))
+           final_obj[index] = b[index].shape[::-1]
+           intem_loc[index] = max_loc[index]
+           intem_x1[index] = x1[index]
+           intem_y2[index] = y2[index] 
+           b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
+           mn[index] = b[index].shape
+           #MN is a tuple for the size of the matrix as MxN
+           h1 = math.ceil(mn[index][0]/2)
+           w1 = math.ceil(mn[index][1]/2)
+           y1[index] = max_loc[index][1] + mn[index][0]
+           y2[index] = max_loc[index][1] - mn[index][0]
+           x1[index] = max_loc[index][0] - mn[index][1]
+           x2[index] = max_loc[index][0] + mn[index][1]
+           
+           if (y2[index] < 0):
+               y2[index] = 0
+           if (x1[index] < 0):
+               x1[index] = 0
+           if (x2[index] > lb[1]):
+                   x2[index] = lb[1]
+           if (y1[index] > lb[0]):
+                   y1[index] = lb[0]
+           #new_img = img[y2:y1, 0:x2]
+           new_frame_env[index] = frame_env[y2[index]:y1[index], x1[index]:x2[index]]
+           envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
+           corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
+           min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index])
+           while (max_val_new[index] > (.8*max_val[index]) or k[index] < 10):
+               if (k[index] > (div/size_range)/.002):
+                  break
+               if (max_val_new[index] > max_val[index]):
+                  final_obj[index] = b[index].shape[::-1]
+                  max_val[index] = max_val_new[index]
+                  intem_loc[index] = max_loc_new[index]
+                  intem_x1[index] = x1[index]
+                  intem_y2[index] = y2[index]
+               k[index] = k[index] + 1
+               if (max_val_new[index] < threshold):
+                  b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
+                  mn[index] = b[index].shape
+           #MN is a tuple for the size of the matrix as MxN
+                  h1 = math.ceil(mn[index][0]/2)
+                  w1 = math.ceil(mn[index][1]/2)
+                          
+                  y1[index] = max_loc[index][1] + mn[index][0]
+                          
+                  y2[index] = max_loc[index][1] - mn[index][0]
+                          
+                  x1[index] = max_loc[index][0] - mn[index][1]
+                          
+                  x2[index] = max_loc[index][0] + mn[index][1]
+                          
+                  if (y2[index] < 0):
+                                
+                      y2[index] = 0
+                          
+                  if (x1[index] < 0):
+                                
+                        x1[index] = 0
+                          
+                  if (x2[index] > lb[1]):
+                                
+                      x2[index] = lb[1]
+                         
+                  if (y1[index] > lb[0]):
+                                
+                      y1[index] = lb[0]
+           #new_img = img[y2:y1, 0:x2]
+                          
+                  new_frame_env[index] = frame_env[y2[index]:y1[index], x2[index]:x1[index]]
+                  envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0) 
+                  corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
+                   #cv2.normalize(corrnew[index],corrnew[index],0,1,cv2.NORM_MINMAX,-1)
+                  min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index]) 
+                   
+                  if (max_val_new[index] > max_val[index]):
+                        final_obj[index] = b[index].shape[::-1]
+                        intem_loc[index] = max_loc_new[index]
+                        intem_x1[index] = x1[index]
+                        intem_y2[index] = y2[index]
+               if (max_val[index] > threshold):
+                 # final_obj[index] = b[index]
+                 #  intem_loc[index] = max_loc_new[index]
+                 #  intem_x1[index] = x1[index]
+                 #  intem_y2[index] = y2[index]
+                   break
+           locx[index] = intem_loc[index][0] + intem_x1[index]
+           locy[index] = intem_loc[index][1] + intem_y2[index]
+
+        return locx, locy, max_val, final_obj
+
+        
+
+    ##
+    # @brief finds an object based on a desired color: Developed by Oren Pierce
     # @param frame The frame in which the object needs to be found
     # @param color The color of the desired object
     # @return output returns a color mask (color is white, everything else is black)
@@ -48,7 +215,7 @@ class VisionTools:
 
 
     ##
-    # @brief finds average r, g, b value of an image
+    # @brief finds average r, g, b value of an image: Developed by Oren Pierce
     # @param frame The frame in which average color is to be found
     # @return output returns average values and image of that color
 
@@ -71,7 +238,7 @@ class VisionTools:
         return(avg_color_image)
 
     ##
-    # @brief scans a region of interest (roi) accross an image
+    # @brief scans a region of interest (roi) accross an image: Developed by Oren Pierce
     # @param frame The frame the roi is going to scan
     # @param roi_size The side length of a square region of interest
     # @return returns the region of interest

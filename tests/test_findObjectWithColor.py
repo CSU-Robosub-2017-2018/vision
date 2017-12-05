@@ -23,7 +23,7 @@ if __name__ == '__main__':
     userColor = "red"
 
     #read in image from camera (debug denotes test image)
-    joeCamera = imgFeedCamera(debug="/home/oren/vision/tests/test_files/circles.png")
+    joeCamera = imgFeedCamera(debug="/home/oren/vision/tests/test_files/dogball.jpg")
     image = joeCamera.getFrame()
     
     #show original image
