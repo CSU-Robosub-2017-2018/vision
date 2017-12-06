@@ -119,60 +119,47 @@ class VisionTools:
            envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
            corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
            min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index])
-           while (max_val_new[index] > (.8*max_val[index]) or k[index] < 10):
-               if (k[index] > (div/size_range)/.002):
-                  break
-               if (max_val_new[index] > max_val[index]):
-                  final_obj[index] = b[index].shape[::-1]
-                  max_val[index] = max_val_new[index]
-                  intem_loc[index] = max_loc_new[index]
-                  intem_x1[index] = x1[index]
-                  intem_y2[index] = y2[index]
-               k[index] = k[index] + 1
-               if (max_val_new[index] < threshold):
-                  b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
-                  mn[index] = b[index].shape
-           #MN is a tuple for the size of the matrix as MxN
-                  h1 = math.ceil(mn[index][0]/2)
-                  w1 = math.ceil(mn[index][1]/2)
-                          
-                  y1[index] = max_loc[index][1] + mn[index][0]
-                          
-                  y2[index] = max_loc[index][1] - mn[index][0]
-                          
-                  x1[index] = max_loc[index][0] - mn[index][1]
-                          
-                  x2[index] = max_loc[index][0] + mn[index][1]
-                          
-                  if (y2[index] < 0):
-                                
-                      y2[index] = 0
-                          
-                  if (x1[index] < 0):
-                                
+           while ((max_val_new[index] > (.9*max_val[index]) or (k[index] < 10)) and (k[index] < 10 or max_val[index] > 0.25)):
+                if (k[index] > (div/size_range)/.002):
+                    break
+                if (max_val_new[index] > max_val[index]):
+                    final_obj[index] = b[index]
+                    max_val[index] = max_val_new[index]
+                    intem_loc[index] = max_loc_new[index]
+                    intem_x1[index] = x1[index]
+                    intem_y2[index] = y2[index]
+                    k[index] = k[index] + 1
+                if (max_val_new[index] < threshold):
+                    b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
+                    mn[index] = b[index].shape
+   #MN is a tuple for the size of the matrix as MxN
+                    h1 = math.ceil(mn[index][0]/2)
+                    w1 = math.ceil(mn[index][1]/2)
+                    y1[index] = max_loc[index][1] + mn[index][0]
+                    y2[index] = max_loc[index][1] - mn[index][0]
+                    x1[index] = max_loc[index][0] - mn[index][1]
+                    x2[index] = max_loc[index][0] + mn[index][1]
+                    if (y2[index] < 0):
+                        y2[index] = 0
+                    if (x1[index] < 0):
                         x1[index] = 0
-                          
-                  if (x2[index] > lb[1]):
-                                
-                      x2[index] = lb[1]
-                         
-                  if (y1[index] > lb[0]):
-                                
-                      y1[index] = lb[0]
-           #new_img = img[y2:y1, 0:x2]
-                          
-                  new_frame_env[index] = frame_env[y2[index]:y1[index], x2[index]:x1[index]]
-                  envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0) 
-                  corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
+                    if (x2[index] > lb[1]):
+                        x2[index] = lb[1]
+                    if (y1[index] > lb[0]):
+                        y1[index] = lb[0]
+   #new_img = img[y2:y1, 0:x2]
+                    new_frame_env[index] = frame_env[y2[index]:y1[index], x1[index]:x2[index]]
+                    envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0) 
+                    corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
                    #cv2.normalize(corrnew[index],corrnew[index],0,1,cv2.NORM_MINMAX,-1)
-                  min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index]) 
+                    min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index]) 
                    
-                  if (max_val_new[index] > max_val[index]):
+                    if (max_val_new[index] > max_val[index]):
                         final_obj[index] = b[index].shape[::-1]
                         intem_loc[index] = max_loc_new[index]
                         intem_x1[index] = x1[index]
                         intem_y2[index] = y2[index]
-               if (max_val[index] > threshold):
+                if (max_val[index] > threshold):
                  # final_obj[index] = b[index]
                  #  intem_loc[index] = max_loc_new[index]
                  #  intem_x1[index] = x1[index]
