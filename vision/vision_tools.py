@@ -19,14 +19,14 @@ class VisionTools:
         self.useme = True
 
     ##
-    # @brief finds object location based on shape: Developed by Jake Harmon
+    # @brief finds object location based on shape using dynamic environment selections: Developed by Jake Harmon
     # @param frame_env Image passed in from camera
     # @param userMask The shape the user/controls wishes to find
     # @param div number of slices in the size of the mask
     # @param size_range maximum scaling of the mask based on the original size
-    # @return lock[x] -vector- X values of the location
-    # @return lock[y] -vector- Y values of the location
-    # @return finalObject Image of the object
+    # @return lock[x] -vector- X values of the location (center)
+    # @return lock[y] -vector- Y values of the location (center)
+    # @return finalObject size of the object in the environment
     # @return max_val -vector- maximum correlation values for each mask
 
     def calcObject(self, frame_env, userMask, div, size_range):
@@ -42,9 +42,8 @@ class VisionTools:
 
         for J in range(1, div):
             imk.append(cv2.resize(obj, (0,0), fx=J*div/size_range, fy=J*div/size_range))
-            #size of mask from 10% of input size to 200% of input size
-            #this range has been decided arbitrarily
-        
+            #slices mask from div/size_range (minimum size) and div*div/size_range (maximum size)
+        #variables, based on size of imk after loop
         length = len(imk)
         env = [0]*length
         maxCorr = [0]*length
@@ -79,23 +78,23 @@ class VisionTools:
         lb = frame_env.shape
             
         for index, item in enumerate(imk):
+           #select slice of object and compute properties
            b[index] = imk[index]
            w, h = b[index].shape[::-1]
            h1 = math.ceil(h/2)
            w1 = math.ceil(w/2)
-           
+           #append a border of zero around environment to prep for computing corr (half of mask size in corresponding direction)
            envir[index] = cv2.copyMakeBorder(frame_env,h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
            c[index] = cv2.matchTemplate(envir[index], b[index], match_type)
-           #cv2.normalize(c[index],c[index],0,1,cv2.NORM_MINMAX,-1)
+           
            #IMportant: max_loc is in the form of (x,y) tuple, i.e. col then row
            min_val, max_val[index], min_loc, max_loc[index] = cv2.minMaxLoc(c[index])
-           #maxCorr.insert(index, np.amax(c[index]))
-           #maxIndex is a tuple 
-           #maxTuple.insert(index, np.unravel_index(c[index].argmax(), c[index].shape))
+           #save size of obj in (x,y) form, save intermediate locations (need this to save changes made by dyn env later)
            final_obj[index] = b[index].shape[::-1]
            intem_loc[index] = max_loc[index]
            intem_x1[index] = x1[index]
-           intem_y2[index] = y2[index] 
+           intem_y2[index] = y2[index]
+           #resize mask slice by .2% of original mask size
            b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
            mn[index] = b[index].shape
            #MN is a tuple for the size of the matrix as MxN
@@ -105,7 +104,7 @@ class VisionTools:
            y2[index] = max_loc[index][1] - mn[index][0]
            x1[index] = max_loc[index][0] - mn[index][1]
            x2[index] = max_loc[index][0] + mn[index][1]
-           
+           #checking to see if the dyn env caused impossible pixels to be selected (negative or beyond max dim)
            if (y2[index] < 0):
                y2[index] = 0
            if (x1[index] < 0):
@@ -114,12 +113,16 @@ class VisionTools:
                    x2[index] = lb[1]
            if (y1[index] > lb[0]):
                    y1[index] = lb[0]
-           #new_img = img[y2:y1, 0:x2]
+           #select the section from the whole env
            new_frame_env[index] = frame_env[y2[index]:y1[index], x1[index]:x2[index]]
            envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
            corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
            min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index])
+           #While loop: trailing stop of 10% (i.e. if current cor falls below 90% of max, exit loop)
+           #k[index] < 10 establishes a min for iterations, as a trend might not appear until a certain increase
+           #max_val > .25 dictates that if the max corr is still below 1/4 by the tenth iteration to exit loop
            while ((max_val_new[index] > (.9*max_val[index]) or (k[index] < 10)) and (k[index] < 10 or max_val[index] > 0.25)):
+                #if statement to check when one mask slice reaches the very start of the next slice
                 if (k[index] > (div/size_range)/.002):
                     break
                 if (max_val_new[index] > max_val[index]):
@@ -132,7 +135,7 @@ class VisionTools:
                 if (max_val_new[index] < threshold):
                     b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
                     mn[index] = b[index].shape
-   #MN is a tuple for the size of the matrix as MxN
+   #mn is a tuple for the size of the matrix as MxN
                     h1 = math.ceil(mn[index][0]/2)
                     w1 = math.ceil(mn[index][1]/2)
                     y1[index] = max_loc[index][1] + mn[index][0]
@@ -151,7 +154,7 @@ class VisionTools:
                     new_frame_env[index] = frame_env[y2[index]:y1[index], x1[index]:x2[index]]
                     envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0) 
                     corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
-                   #cv2.normalize(corrnew[index],corrnew[index],0,1,cv2.NORM_MINMAX,-1)
+                   
                     min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index]) 
                    
                     if (max_val_new[index] > max_val[index]):
@@ -165,9 +168,10 @@ class VisionTools:
                  #  intem_x1[index] = x1[index]
                  #  intem_y2[index] = y2[index]
                    break
+           #locx,locy save the adjusted values of the location relative to the original environment
            locx[index] = intem_loc[index][0] + intem_x1[index]
            locy[index] = intem_loc[index][1] + intem_y2[index]
-
+        #returns the (x,y) coords of the centers of the max corrs with an (x,y) size of object
         return locx, locy, max_val, final_obj
 
         
