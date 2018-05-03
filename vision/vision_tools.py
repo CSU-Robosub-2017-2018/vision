@@ -6,6 +6,7 @@ target tracking.
 import numpy as np
 import cv2
 import math
+import os
 
 
 class VisionTools:
@@ -19,20 +20,219 @@ class VisionTools:
         self.useme = True
 
     ##
-    # @brief finds object location based on shape using dynamic environment selections: Developed by Jake Harmon
-    # @param frame_env Image passed in from camera
+    # @brief initializes tracker based on user defined tracker type
+    # @param frame first frame of the video that contains a bounding box
+    # @param tracker_type type of tracker being used as defined by the user
+    # @param bbox bounding box around object, passed in by BBoxAndROIS function: [upper corner, lower corner, width, height]
+    # @return None if there is no bounding box, thus no object in frame, do not initialize tracker
+    # @return ok confirmation that the tracker has been initialized
+    # @return tracker the tracker object that was created
+    def trackerInit(self, frame, tracker_type, bbox):
+        (major_ver, minor_ver, subminor_ver) = (cv2.__version__).split('.')
+        #FIXME offsets added to move bounding box up. Need to see if bbox being low is consistent with other cases
+        #Note: only needed for test_detectAndTrack.py
+        y_offset = 170
+        x_offset = 20
+        if bbox is None:
+            print("No object in frame")
+            return None
+        else:
+            if int(minor_ver) < 3:
+                tracker = cv2.Tracker_create(tracker_type)
+            else:
+                if tracker_type == 'BOOSTING':
+                    tracker = cv2.TrackerBoosting_create()
+                if tracker_type == 'MIL':
+                    tracker = cv2.TrackerMIL_create()
+                if tracker_type == 'KCF':
+                    tracker = cv2.TrackerKCF_create()
+                if tracker_type == 'TLD':
+                    tracker = cv2.TrackerTLD_create()
+                if tracker_type == 'MEDIANFLOW':
+                    tracker = cv2.TrackerMedianFlow_create()
+                if tracker_type == 'GOTURN':
+                    tracker = cv2.TrackerGOTURN_create()
+            bbox = (bbox[0] + x_offset, bbox[1] - y_offset, bbox[2], bbox[3])
+            ok = tracker.init(frame, bbox)
+            return ok, tracker
+
+
+    ##
+    # @brief tracks object in frame bounded by bounding box
+    # @param frame current frame with object being tracked
+    # @param tracker_type type of tracker as defined by the user
+    # @param bbox initial bbox passed in by trackerInit: [upper corner, lower corner, width, height]
+    # @param tracker object initialized in trackerInit
+    # @param ok confirmation that tracker is initialized
+    # @return final final image with bounding box around object
+    def track(self, frame, tracker_type, bbox, tracker, ok):
+        #start timer
+        timer = cv2.getTickCount()
+
+        #update tracker
+        ok, bbox = tracker.update(frame)
+
+        #calculate frames per second
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+
+        #draw bounding boxes
+        if ok:
+            #tracking success
+            p1 = (int(bbox[0]), int(bbox[1]))
+            p2 = (int(bbox[0] + bbox[2]), int(bbox[1] + bbox[3]))
+            final = cv2.rectangle(frame, p1, p2, (255,0,0), 2, 1)
+        else:
+            #tracking failure
+            final = cv2.putText(frame, "Tracking failure detected", (100,80), cv2.FONT_HERSHEY_SIMPLEX, 0.75,(0, 0, 255),2)
+
+        # Display tracker type on frame
+        final = cv2.putText(frame, tracker_type + " Tracker", (100,20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50,170,50),2);
+
+        # Display FPS on frame
+        final = cv2.putText(frame, "FPS : " + str(int(fps)), (100,50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50,170,50), 2);
+
+        return final
+
+
+    ##
+    # @brief draws bounding boxes around object and creates regions of interest
+    # @param obj_cent center of the object passed in by detectObject function
+    # @param frame_env original frame captured by the camera. used to calc percent area covered by bbox
+    # @param userColor color of desired object as defined by the user
+    # @return p1 one of the two points that define bbox
+    # @return p2 one of the two points that define bbox
+    # @return bbox array defining bounding box: [upper corner, lower corner, width, height]
+    # @return percent_area percentage of the frame covered by bounding box (pass to controls)
+    # @return big_ROI region of interest containing object. Pass this into detectObject function for quick detection of object that has already been found
+    # @return mask_big_ROI color mask of big_ROI
+    def BBoxAndROIS(self, obj_cent, frame_env, userColor):
+        #create region of interest (ROI) around the object that will be used to determine how far the object
+        #has moved between frames
+        size_big_ROI = 150
+        y1 = obj_cent[1]-size_big_ROI
+        y2 = obj_cent[1]+size_big_ROI
+        x1 = obj_cent[0]-size_big_ROI
+        x2 = obj_cent[0]+size_big_ROI
+        if y1 < 0:
+            y1 = 0
+        if y2 < 0:
+            y2 = 0
+        if x1 < 0:
+            x1 = 0
+        if x2 < 0:
+            x2 = 0
+        big_ROI = frame_env[y1:y2,x1:x2]
+        #gray_big_ROI = cv2.cvtColor(big_ROI, cv2.COLOR_RGB2GRAY)
+        blur = cv2.GaussianBlur(big_ROI,(5,5),0)
+        mask_big_ROI = self.findObjWColor(blur, userColor)
+        #FIXME currently uses fixed bounding box size. Need to create bounding boxes around object and a ROI to match size.
+        #This ROI will be used to get the color of the object each time detectObject is called
+        size_bbox = 100
+        p1 = (obj_cent[0] - size_bbox, obj_cent[1] + size_bbox)
+        p2 = (obj_cent[0] + size_bbox, obj_cent[1] - size_bbox)
+        delta_x = (obj_cent[0] + size_bbox) - (obj_cent[0] - size_bbox)
+        delta_y = abs((obj_cent[1] - size_bbox) - (obj_cent[1] + size_bbox))
+        #calculate percentage of environment covered by bounding box
+        env_height = len(frame_env)
+        env_width = len(frame_env[0])
+        #print(env_height)
+        #print(env_width)
+        env_area = env_height*env_width
+        bbox_area = abs(delta_x*delta_y)
+        percent_area = (bbox_area / env_area)*100
+        #define bbox parameter to be fed into tracker initialization
+        bbox = (p1[0], p1[1], delta_x, delta_y)
+
+        return p1, p2, bbox, percent_area, big_ROI, mask_big_ROI
+
+
+    ##
+    # @brief checks to see if avg color (RGB) falls within a certain RGB range defining a certain color
+    # @param RGB average color of the small_ROI found in detectObject
+    # @return check_color initialized to False, changed to true if RGB falls in a color range
+    def checkColor(self, RGB, check_color = False):
+        check_color_1 = False
+        check_color_2 = False
+        check_color_3 = False
+        #define colors and ranges specific color falls under
+        orange_upper_range = np.array([125, 181, 255], dtype=np.uint8)
+        orange_lower_range = np.array([50, 70, 137], dtype=np.uint8)
+
+        #TODO more color thresholds can be defined for finding other colors. add these as needed. examples below..
+        #green_lower_range = np.array([13, 155, 13], dtype=np.uint8)
+        #green_upper_range = np.array([111, 232, 111], dtype=np.uint8)
+
+        #blue_lower_range = np.array([127, 17, 17], dtype=np.uint8)
+        #blue_upper_range = np.array([224, 116, 116], dtype=np.uint8)
+
+        if (orange_lower_range[0] <= RGB[0] <= orange_upper_range[0] and orange_lower_range[1] <= RGB[1] <= orange_upper_range[1]
+                and orange_lower_range[2] <= RGB[2] <= orange_upper_range[2]):
+            check_color_1 = True
+        #if (orange_lower_range[0] <= RGB[0] <= orange_upper_range[0] and orange_lower_range[1] <= RGB[1] <= orange_upper_range[1]
+                #and orange_lower_range[2] <= RGB[2] <= orange_upper_range[2]):
+            #check_color_2 = True
+        #if (orange_lower_range[0] <= RGB[0] <= orange_upper_range[0] and orange_lower_range[1] <= RGB[1] <= orange_upper_range[1]
+                #and orange_lower_range[2] <= RGB[2] <= orange_upper_range[2]):
+            #check_color_3 = True
+        if check_color_1 == True: #or check_color_2 == True or check_color_3 == True:
+            check_color = True
+
+        return check_color
+
+
+    ##
+    # @brief finds new object location given its location in a previous frame
+    # @center_point center of object found by detectObject
+    # @param gray_frame_env Image passed in from camera
     # @param userMask The shape the user/controls wishes to find
+    # @return new_cent (X,Y) location of center of object
+    # @return loc_diff amount center has moved in X and Y direction
+    def updateLocation(self, center_point, gray_frame_env, userMask):
+        #FIXME this function does not work yet. further development is needed
+        #returns the (x,y) coords of the centers of the max corrs with an (x,y) size of object
+        x_pos = locx[int((length+1)/2)-1]
+        y_pos = locy[int((length+1)/2)-1]
+        new_cent = [x_pos, y_pos]
+        if x_pos >= center_point[0]:
+            x_diff = x_pos-center_point[0]
+        else:
+            x_diff = -1*(center_point[0]-x_pos)
+        if y_pos >= center_point[1]:
+            y_diff = y_pos-center_point[1]
+        else:
+            y_diff = -1*(center_point[0]-y_pos)
+
+        loc_diff = [x_diff, y_diff]
+
+        return new_cent, loc_diff
+
+    ##
+    # @brief finds object location based on shape using dynamic environment selections: Developed by Jake Harmon
+    # @param frame_env image taken in from camera
+    # @param gray_frame_env grayscaled version of frame_env
+    # @param userMask The shape the user/controls wishes to find
+    # @param detection tolerance (ex. threshold = 0.95 --> 95 percent match)
     # @param div number of slices in the size of the mask
     # @param size_range maximum scaling of the mask based on the original size
-    # @return lock[x] -vector- X values of the location (center)
-    # @return lock[y] -vector- Y values of the location (center)
-    # @return finalObject size of the object in the environment
+    # @return obj_cent center point of detected object
+    # @return locx -vector- X values of the location (center)
+    # @return locy -vector- Y values of the location (center)
+    # @return final_obj size of the object in the environment
     # @return max_val -vector- maximum correlation values for each mask
-
-    def calcObject(self, frame_env, userMask, div, size_range):
+    # @return small_ROI small region of interest around object, will be used to find/define average color
+    # @return detect initialized to False, changed to True if object is detected
+    def detectObject(self, frame_env, gray_frame_env, userMask, threshold, div=20, size_range=200, detect = False):
         match_type = cv2.TM_CCORR_NORMED
         if userMask == "circle":
-            obj = cv2.imread('/home/oren/vision/tests/test_files/circ_obj.PNG', cv2.IMREAD_GRAYSCALE)
+            #define relative path of test files
+            path = os.getcwd()
+            #in case of windows users, switched backslashes with fwd slashes
+            pathFwd = '/'.join(path.split('\\'))
+            pathFwd = pathFwd + '/test_files/'
+            filename = 'circ_obj.PNG'
+            fullFilePath = pathFwd + filename
+            obj = cv2.imread(fullFilePath, cv2.IMREAD_GRAYSCALE)
+        #TODO add functionality for other shape masks. examples below..
         #if userMask == "square":
             #obj = cv2.imread('/home/oren/vision/tests/test_files/sq_obj.PNG'), cv2.IMREAD_GRAYSCALE)
         #if userMask == "triangle":
@@ -40,43 +240,35 @@ class VisionTools:
         #imk stores the sliced stages of the mask
         imk = []
 
+
         for J in range(1, div):
             imk.append(cv2.resize(obj, (0,0), fx=J*div/size_range, fy=J*div/size_range))
             #slices mask from div/size_range (minimum size) and div*div/size_range (maximum size)
         #variables, based on size of imk after loop
         length = len(imk)
-        env = [0]*length
-        maxCorr = [0]*length
-        maxTuple = [0]*length
-        y = [0]*length
-        x = [0]*length
-        b= [0]*length
-        c=[0]*length
+        b = [0]*length
+        c =[0]*length
         y1 = [0]*length
         y2 = [0]*length
         x1 = [0]*length
         x2 = [0]*length
         mn=[0]*length
-        new_frame_env = [0]*length
+        new_gray_frame_env = [0]*length
         corrnew = [0]*length
         envir = [0]*length
-        maxCorr_new = [0]*length
-        maxTuple_new = [0]*length
         max_loc = [0]*length
         max_loc_new=[0]*length
         max_val = [0]*length
-        max_val_new = [0]*length
         max_val_new = [0]*length
         intem_y2 = [0]*length
         intem_x1 = [0]*length
         final_obj = [0]*length
         intem_loc = [0]*length
-        threshold = .95
         locx = [0]*length
         locy = [0]*length
         k = np.ones(len(imk)+1, dtype = np.int)
-        lb = frame_env.shape
-            
+        lb = gray_frame_env.shape
+
         for index, item in enumerate(imk):
            #select slice of object and compute properties
            b[index] = imk[index]
@@ -84,9 +276,8 @@ class VisionTools:
            h1 = math.ceil(h/2)
            w1 = math.ceil(w/2)
            #append a border of zero around environment to prep for computing corr (half of mask size in corresponding direction)
-           envir[index] = cv2.copyMakeBorder(frame_env,h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
+           envir[index] = cv2.copyMakeBorder(gray_frame_env,h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
            c[index] = cv2.matchTemplate(envir[index], b[index], match_type)
-           
            #IMportant: max_loc is in the form of (x,y) tuple, i.e. col then row
            min_val, max_val[index], min_loc, max_loc[index] = cv2.minMaxLoc(c[index])
            #save size of obj in (x,y) form, save intermediate locations (need this to save changes made by dyn env later)
@@ -114,14 +305,14 @@ class VisionTools:
            if (y1[index] > lb[0]):
                    y1[index] = lb[0]
            #select the section from the whole env
-           new_frame_env[index] = frame_env[y2[index]:y1[index], x1[index]:x2[index]]
-           envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
+           new_gray_frame_env[index] = gray_frame_env[y2[index]:y1[index], x1[index]:x2[index]]
+           envir[index] = cv2.copyMakeBorder(new_gray_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
            corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
            min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index])
            #While loop: trailing stop of 10% (i.e. if current cor falls below 90% of max, exit loop)
            #k[index] < 10 establishes a min for iterations, as a trend might not appear until a certain increase
            #max_val > .25 dictates that if the max corr is still below 1/4 by the tenth iteration to exit loop
-           while ((max_val_new[index] > (.9*max_val[index]) or (k[index] < 10)) and (k[index] < 10 or max_val[index] > 0.25)):
+           while ((max_val_new[index] > (0.9*max_val[index]) or (k[index] < 10)) and (k[index] < 10 or max_val[index] > 0.25)):
                 #if statement to check when one mask slice reaches the very start of the next slice
                 if (k[index] > (div/size_range)/.002):
                     break
@@ -132,6 +323,8 @@ class VisionTools:
                     intem_x1[index] = x1[index]
                     intem_y2[index] = y2[index]
                     k[index] = k[index] + 1
+                if (max_val_new[index] > threshold):
+                    detect = True
                 if (max_val_new[index] < threshold):
                     b[index] = cv2.resize(obj, (0,0), fx=(k[index]*.002+(index+1)*div/size_range), fy=(k[index]*.002+(index+1)*div/size_range))
                     mn[index] = b[index].shape
@@ -151,39 +344,54 @@ class VisionTools:
                     if (y1[index] > lb[0]):
                         y1[index] = lb[0]
    #new_img = img[y2:y1, 0:x2]
-                    new_frame_env[index] = frame_env[y2[index]:y1[index], x1[index]:x2[index]]
-                    envir[index] = cv2.copyMakeBorder(new_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0) 
+                    new_gray_frame_env[index] = gray_frame_env[y2[index]:y1[index], x1[index]:x2[index]]
+                    envir[index] = cv2.copyMakeBorder(new_gray_frame_env[index],h1,h1,w1,w1,cv2.BORDER_CONSTANT,0)
+
                     corrnew[index] = cv2.matchTemplate(envir[index], b[index], match_type)
-                   
-                    min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index]) 
-                   
+                    min_val_new, max_val_new[index], min_loc_new, max_loc_new[index] = cv2.minMaxLoc(corrnew[index])
+
                     if (max_val_new[index] > max_val[index]):
                         final_obj[index] = b[index].shape[::-1]
                         intem_loc[index] = max_loc_new[index]
                         intem_x1[index] = x1[index]
                         intem_y2[index] = y2[index]
-                if (max_val[index] > threshold):
-                 # final_obj[index] = b[index]
-                 #  intem_loc[index] = max_loc_new[index]
-                 #  intem_x1[index] = x1[index]
-                 #  intem_y2[index] = y2[index]
-                   break
+                break
            #locx,locy save the adjusted values of the location relative to the original environment
            locx[index] = intem_loc[index][0] + intem_x1[index]
            locy[index] = intem_loc[index][1] + intem_y2[index]
         #returns the (x,y) coords of the centers of the max corrs with an (x,y) size of object
-        return locx, locy, max_val, final_obj
+        obj_cent = [locx[int((length+1)/2)-1], locy[int((length+1)/2)-1]]
+        #create small region of interest for getting the average color of the object
+        size_small_ROI = 30
+        y3 = obj_cent[1]-size_small_ROI
+        y4 = obj_cent[1]+size_small_ROI
+        x3 = obj_cent[0]-size_small_ROI
+        x4 = obj_cent[0]+size_small_ROI
+        if y3 < 0:
+            y3 = 0
+        if y4 < 0:
+            y4 = 0
+        if x3 < 0:
+            x3 = 0
+        if x4 < 0:
+            x4 = 0
+        small_ROI = frame_env[y3:y4,x3:x4]
+        #FIXME fix detect to give output based on whether or not shape was actually found
 
-        
+        return obj_cent, locx, locy, max_val, final_obj, small_ROI, detect
+
 
     ##
     # @brief finds an object based on a desired color: Developed by Oren Pierce
     # @param frame The frame in which the object needs to be found
     # @param color The color of the desired object
     # @return output returns a color mask (color is white, everything else is black)
-
     def findObjWColor(self, frame, userColor):
         #define colors and ranges specific color falls under
+        #note: will have to adjust thresholds for specific cases. Color code is [B, G, R]
+        orange_upper_range = np.array([125, 181, 255], dtype=np.uint8)
+        orange_lower_range = np.array([50, 70, 137], dtype=np.uint8)
+
         red_lower_range = np.array([13, 13, 168], dtype=np.uint8)
         red_upper_range = np.array([101, 101, 242], dtype=np.uint8)
 
@@ -197,11 +405,13 @@ class VisionTools:
 
         if userColor == "red":
             mask = cv2.inRange(frame, red_lower_range, red_upper_range)
+        elif userColor == "orange":
+            mask = cv2.inRange(frame, orange_lower_range, orange_upper_range)
         elif userColor == "blue":
             mask = cv2.inRange(frame, blue_lower_range, blue_upper_range)
         elif userColor == "green":
             mask = cv2.inRange(frame, green_lower_range, green_upper_range)
-        
+
         return(mask)
 
 
@@ -245,7 +455,7 @@ class VisionTools:
         roi = [[]*roi_width]*roi_height
         roi = np.asarray(roi)
 
-        #fill roi with data, repeat across original image 
+        #fill roi with data, repeat across original image
         for i in range(0, image_data.shape[1] - roi_height, (int)(roi_height / 2)):
             for j in range(0, image_data.shape[1] - roi_width, (int)(roi_width / 2)):
                     print(i)
@@ -256,8 +466,8 @@ class VisionTools:
                         break
             else:
                 continue
-            break    
-    
+            break
+
     ##
     # @brief Detects largest contour and draws a box around it
     # @param frame The frame in which a contour will be found
@@ -269,7 +479,7 @@ class VisionTools:
         # Threshold filter to find contours
         ret, thresh = cv2.threshold(frame, 153, 255, 0)
         bw = cv2.cvtColor(thresh, cv2.COLOR_BGR2GRAY)
-        
+
         # Find Contours
         q, contours, hierarchy = cv2.findContours(bw, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -281,13 +491,13 @@ class VisionTools:
         # Create Rectangle around largest contour (ROI)
         x, y, w, h = cv2.boundingRect(cnt)
         roi = cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        
+
         mask = np.zeros(roi.shape,np.uint8)
         mask[y:y+h,x:x+w] = roi[y:y+h,x:x+w]
         output = cv2.bitwise_and(roi, mask)
-        
+
         return output
-    
+
     ##
     # @brief Finds midline of image
     # @param image The final filtered line image
@@ -298,10 +508,10 @@ class VisionTools:
     def midline(self,image, coordList, minc, newcolor):
         #Sort by y coords
         coordList = coordList[np.argsort(coordList[:,1])]
-        
+
         #Gives every unique y coordinate
         yCoords = np.unique(coordList[:,1])
-        
+
         for coord in yCoords:
             coords = [elem[0] for elem in coordList if elem[1] == coord]
             min = np.amin(coords)
@@ -310,7 +520,7 @@ class VisionTools:
             image[mid][coord] = newcolor
         output=image
         return output
-            
+
     ##
     # @brief Filters image by shade of gray
     # @param frame The frame to be filtered
@@ -318,17 +528,17 @@ class VisionTools:
     # @param upper The upper color limit in gray
     # @return output Returns image with only one shade of gray
     def grayfilt(self, frame, lower, upper):
-        
+
         #Sets color filtering threshold
         lower = lower
         upper = upper
-        
+
         #Masks image to find specific color
         mask = cv2.inRange(merge, lower, upper)
-        
+
         #Returns image with only R,G,B visible
         output = cv2.bitwise_and(frame, frame, mask = mask)
-        
+
         return output
     ##
     # @brief Filters image by color
@@ -337,29 +547,29 @@ class VisionTools:
     # @param upper The upper color limit in BGR
     # @return output Returns image with only one color
     def colorfilt(self, frame, lower, upper):
-        
+
         #splits into color channels
         b,g,r = cv2.split(frame)
         M = np.maximum(np.maximum(r, g), b)
         r[r < M] = 0
         g[g < M] = 0
         b[b < M] = 0
-        
+
         #Merges max color channels back into the image
         merge = cv2.merge([b, g, r])
-        
+
         #Sets color filtering threshold
         lower = np.array(lower)
         upper = np.array(upper)
-        
+
         #Masks image to find specific color
         mask = cv2.inRange(merge, lower, upper)
-        
+
         #Returns image with only R,G,B visible
         output = cv2.bitwise_and(merge, merge, mask = mask)
-        
+
         return output
-        
+
     ##
     # @brief Orange line detection, developed by Brett Gonzales
     # @param frame The frame to be filtered
@@ -410,12 +620,12 @@ class VisionTools:
         output = cv2.bitwise_and(image2, image2, mask=mask)
 
         return output
-    
+
     ##
     # @brief Orange line position detection, developed by Brett Gonzales
     # @param detected The detected line to find position
     # @param color The color range for the position detection
-    # @return coordList array of pixel coordinates 
+    # @return coordList array of pixel coordinates
     # @return num Total number of red pixels
     def LinePosition(self, detected, color):
         #Convert line to numpy array
@@ -429,7 +639,7 @@ class VisionTools:
 
         #Returns array of pixel locations, and total number of red pixels
         return coordList, num
-        
+
 
     ##
     # @brief Draws the bounding boxes onto a frame

@@ -4,9 +4,10 @@ test_simple.py - Tests registration of a single video against a background
                  image, detection and classification of things, and
                  identification of the classified things on screen.
                  '''
-#import all necessary packages and utilities                 
-import cv2                 
+#import all necessary packages and utilities
+import cv2
 import context
+import os
 from vision.vision_tools import VisionTools
 from vision.cameras.camera_video_feed import videoFeedCamera
 
@@ -17,7 +18,15 @@ if __name__ == '__main__':
     print("      filtering algorithm on it then displays frame by frame.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    joeCamera = videoFeedCamera(debug="/home/oren/vision/tests/test_files/output.avi")
+    #define relative path of test files
+    path = os.getcwd()
+    #in case of windows users, switched backslashes with fwd slashes
+    pathFwd = '/'.join(path.split('\\'))
+    pathFwd = pathFwd + '/test_files/'
+    filename = 'output.avi'
+    fullFilePath = pathFwd + filename
+
+    joeCamera = videoFeedCamera(debug=fullFilePath)
     tools = VisionTools()
 
     # Setup a loop to capture a frame from the video feed

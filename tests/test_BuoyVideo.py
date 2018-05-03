@@ -6,6 +6,7 @@ test_simple.py - Tests registration of a single video against a background
                  '''
 import cv2
 import context
+import os
 from vision.vision_tools import VisionTools
 from vision.cameras.camera_video_feed import videoFeedCamera
 
@@ -16,8 +17,16 @@ if __name__ == '__main__':
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
     # Read original video, alter for different videos
-    joeCamera = videoFeedCamera(debug="/home/oren/vision/tests/test_files/Test1.mp4")
-    
+    #define relative path to test file
+    path = os.getcwd()
+    #in case of windows users, switched backslashes with fwd slashes
+    pathFwd = '/'.join(path.split('\\'))
+    pathFwd = pathFwd + '/test_files/'
+    filename = 'Test1.mp4'
+    fullFilePath = pathFwd + filename
+
+    joeCamera = videoFeedCamera(debug=fullFilePath)
+
     tools = VisionTools()
 
 
